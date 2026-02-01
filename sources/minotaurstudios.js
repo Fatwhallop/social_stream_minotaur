@@ -1,11 +1,9 @@
 (function () {
 	 
-	
 	var isExtensionOn = true;
-function toDataURL(url, callback) {
+	function toDataURL(url, callback) {
 	  var xhr = new XMLHttpRequest();
 	  xhr.onload = function() {
-		  
 		var blob = xhr.response;
     
 		if (blob.size > (25 * 1024)) {
@@ -14,7 +12,6 @@ function toDataURL(url, callback) {
 		}
 
 		var reader = new FileReader();
-		
 		
 		reader.onloadend = function() {
 		  callback(reader.result);
@@ -34,10 +31,11 @@ function toDataURL(url, callback) {
 			 .replace(/"/g, "&quot;")
 			 .replace(/'/g, "&#039;") || "";
 	}
+	
 	function getAllContentNodes(element) { // takes an element.
 		var resp = "";
 
-    if (!element){return resp;}
+		if (!element){return resp;}
 		
 		if (!element.childNodes || !element.childNodes.length){
 			if (element.textContent){
@@ -64,44 +62,67 @@ function toDataURL(url, callback) {
 		return resp;
 	}
 	
-	
 	function processMessage(ele){
+		console.log("[Minotaur] Processing message element:", ele);
 		
-		console.log(ele);
-		var chatimg = ""; // boo!
+		var chatimg = "";
 		
-		var name="";
+		var name = "";
 		try {
-			name = escapeHtml(ele.querySelector(".chat-username").textContent.trim());
+			name = escapeHtml(ele.querySelector(".message-name").textContent.trim());
 		} catch(e){
+			console.log("[Minotaur] Could not find username:", e);
 		}
-		var msg="";
+		
+		var msg = "";
 		try {
-			msg = getAllContentNodes(ele.querySelector(".chat-text"));
+			msg = getAllContentNodes(ele.querySelector(".message-text"));
 		} catch(e){
+			console.log("[Minotaur] Could not find message text:", e);
 		}
+		
+		var avatarUrl = "";
+		try {
+			var avatarImg = ele.querySelector(".message-avatar");
+			if (avatarImg && avatarImg.src) {
+				avatarUrl = avatarImg.src;
+			}
+		} catch(e){}
 		
 		var nameColor = "";
 		try {
-			nameColor = getComputedStyle(ele.querySelector(".chat-username")).color || "";
+			var nameElement = ele.querySelector(".message-name");
+			if (nameElement) {
+				nameColor = getComputedStyle(nameElement).color || "";
+			}
 		} catch(e){}
 		
+		var ssnUserId = ele.getAttribute('data-userid') || ele.dataset.userid || "";
+		var ssnChatName = ele.getAttribute('data-chatname') || ele.dataset.name || name;
+		
 		var data = {};
-		data.chatname = name;
+		data.chatname = ssnChatName || name;
 		data.chatbadges = "";
 		data.backgroundColor = "";
 		data.textColor = "";
 		data.nameColor = nameColor;
 		data.chatmessage = msg;
-		data.chatimg = chatimg;
+		data.chatimg = avatarUrl;
 		data.hasDonation = "";
 		data.membership = "";
 		data.contentimg = "";
 		data.textonly = settings.textonlymode || false;
-		data.type = "floatplane";
+		data.type = "minotaurstudios";
+		data.userid = ssnUserId;
 		
-		console.log(data);
+
+		if (ele.dataset) {
+			data.platform = ele.dataset.platform || "website";
+			data.messageId = ele.dataset.messageId || "";
+			data.timestamp = ele.dataset.timestamp || "";
+		}
 		
+		console.log("[Minotaur] Extracted data:", data);
 		pushMessage(data);
 	}
 
@@ -109,15 +130,13 @@ function toDataURL(url, callback) {
 		try{
 			chrome.runtime.sendMessage(chrome.runtime.id, { "message": data }, function(e){});
 		} catch(e){
+			console.log("[Minotaur] Error pushing message:", e);
 		}
 	}
 	
 	var settings = {};
-	// settings.textonlymode
-	// settings.captureevents
 	
-	
-	chrome.runtime.sendMessage(chrome.runtime.id, { "getSettings": true }, function(response){  // {"state":isExtensionOn,"streamID":channel, "settings":settings}
+	chrome.runtime.sendMessage(chrome.runtime.id, { "getSettings": true }, function(response){
 		if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.lastError) { return; }
 		response = response || {};
 		if ("settings" in response){
@@ -128,10 +147,18 @@ function toDataURL(url, callback) {
 	chrome.runtime.onMessage.addListener(
 		function (request, sender, sendResponse) {
 			try{
-				if ("getSource" == request){sendResponse("floatplane");	return;	}
-				if ("focusChat" == request){ // if (prev.querySelector('[id^="message-username-"]')){ //slateTextArea-
-					document.querySelector('textarea.chat-input').focus();
-					sendResponse(true);
+				if ("getSource" == request){
+					sendResponse("minotaurstudios");
+					return;
+				}
+				if ("focusChat" == request){
+					var textarea = document.querySelector('textarea.chat-input');
+					if (textarea) {
+						textarea.focus();
+						sendResponse(true);
+					} else {
+						sendResponse(false);
+					}
 					return;
 				}
 				if (typeof request === "object"){
@@ -146,25 +173,43 @@ function toDataURL(url, callback) {
 		}
 	);
 
-	var lastURL =  "";
+	var lastURL = "";
 	var observer = null;
-	
 	
 	function onElementInserted(containerSelector) {
 		var target = document.querySelector(containerSelector);
-		if (!target){return;}
+		if (!target){
+			console.log("[Minotaur] Container not found:", containerSelector);
+			return;
+		}
 		
+		console.log("[Minotaur] Starting to observe container:", containerSelector);
 		
 		var onMutationsObserved = function(mutations) {
 			mutations.forEach(function(mutation) {
 				if (mutation.addedNodes.length) {
-					
 					for (var i = 0, len = mutation.addedNodes.length; i < len; i++) {
 						try {
-							if (mutation.addedNodes[i].skip){continue;}
-							mutation.addedNodes[i].skip = true;
-							processMessage(mutation.addedNodes[i]); // just for debugging
-						} catch(e){}
+							var node = mutation.addedNodes[i];
+							if (node.skip){continue;}
+							
+							if (node.nodeType === 1 && node.classList && node.classList.contains('message-line')) {
+								node.skip = true;
+								processMessage(node);
+							}
+							
+							if (node.querySelectorAll) {
+								var messageElements = node.querySelectorAll('.message-line');
+								messageElements.forEach(function(msgEle) {
+									if (!msgEle.skip) {
+										msgEle.skip = true;
+										processMessage(msgEle);
+									}
+								});
+							}
+						} catch(e){
+							console.log("[Minotaur] Error processing mutation:", e);
+						}
 					}
 				}
 			});
@@ -175,25 +220,49 @@ function toDataURL(url, callback) {
 		
 		observer = new MutationObserver(onMutationsObserved);
 		observer.observe(target, config);
+		
+		console.log("[Minotaur] Observer started on:", containerSelector);
 	}
 	
-	console.log("social stream injected");
+	console.log("[Minotaur] Social stream injected for Minotaur Studios");
 
-	setInterval(function(){
-		try {
-		if (document.querySelector('chat-messages')){
-			if (!document.querySelector('chat-messages').marked){
-				document.querySelector('chat-messages').marked=true;
-				console.log("CONNECTED chat detected");
-				setTimeout(function(){
-					document.querySelectorAll(".LiveChatMessage").forEach(ele=>{
-						ele.skip=true;
-						// processMessage(ele);
-					});
-					onElementInserted('chat-messages');
-				},1000);
+	function initializeChatWatcher() {
+		var containerSelectors = [
+			'#chat-messages',
+			'.message-container',
+			'.chat-stream'
+		];
+		
+		for (var i = 0; i < containerSelectors.length; i++) {
+			var container = document.querySelector(containerSelectors[i]);
+			if (container) {
+				console.log("[Minotaur] Found chat container with selector:", containerSelectors[i]);
+				
+				if (!container.marked) {
+					container.marked = true;
+					
+					setTimeout(function() {
+						var existingMessages = container.querySelectorAll('.message-line');
+						console.log("[Minotaur] Found", existingMessages.length, "existing messages");
+						
+						existingMessages.forEach(function(ele, index) {
+							setTimeout(function() {
+								ele.skip = true;
+								processMessage(ele);
+							}, index * 100);
+						});
+						
+						onElementInserted(containerSelectors[i]);
+					}, 1000);
+				}
+				return;
 			}
-		}} catch(e){}
-	},2000);
+		}
+		
+		console.log("[Minotaur] Chat container not found yet, retrying...");
+		setTimeout(initializeChatWatcher, 2000);
+	}
+
+	setTimeout(initializeChatWatcher, 1000);
 
 })();
