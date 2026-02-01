@@ -58,6 +58,7 @@
     }
   ],
   "host_permissions": [
+    "minotaurstudios.com/*",
     "http://localhost:8080/*",
     "http://localhost:8181/*",
     "http://localhost:11434/api/generate",
@@ -286,6 +287,14 @@
   ],
   "content_scripts": [
     {
+      "js": [
+        "./sources/minotaurstudios.js"
+      ],
+      "matches": [
+        "minotaurstudios.com/*"
+      ]
+    },
+        {
       "js": [
         "./sources/portal.js"
       ],
